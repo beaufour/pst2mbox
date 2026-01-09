@@ -1,0 +1,27 @@
+[project]
+name = "pst2mbox"
+version = "0.1.0"
+description = "Convert Microsoft Outlook PST files to mbox format"
+readme = "README.md"
+authors = [
+    { name = "Allan Beaufour", email = "allan@beaufour.dk" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+pst2mbox = "pst2mbox.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "mypy>=1.8.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
