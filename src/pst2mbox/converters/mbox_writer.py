@@ -3,7 +3,6 @@
 import email.encoders
 import email.utils
 import mailbox
-from email.message import EmailMessage
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -20,6 +19,20 @@ class OutputStrategy(Enum):
     SINGLE_FILE = "single"  # All messages in one mbox
     PER_FOLDER = "folder"  # One mbox per PST folder
     FLAT_WITH_HEADER = "flat"  # Single mbox with X-Folder headers
+
+
+def _sanitize_header(value: str) -> str:
+    """Sanitize a header value by removing newline characters.
+
+    Args:
+        value: Header value to sanitize.
+
+    Returns:
+        Sanitized header value with newlines replaced by spaces.
+    """
+    if not value:
+        return value
+    return value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
 
 
 class MboxWriter:
@@ -90,13 +103,13 @@ class MboxWriter:
 
         # Add folder header for FLAT_WITH_HEADER strategy
         if self.strategy == OutputStrategy.FLAT_WITH_HEADER and message.folder_path:
-            email_message["X-Folder"] = message.folder_path
+            email_message["X-Folder"] = _sanitize_header(message.folder_path)
 
         # Add to mbox
         mbox = self._mbox_files[mbox_key]
         mbox.add(email_message)
 
-    def _convert_to_email(self, message: Message) -> EmailMessage:
+    def _convert_to_email(self, message: Message) -> MIMEMultipart:
         """Convert internal Message to EmailMessage.
 
         Args:
@@ -105,29 +118,24 @@ class MboxWriter:
         Returns:
             EmailMessage object.
         """
-        # Create base email message
-        if message.has_attachments() or message.html_body:
-            # Use multipart for messages with attachments or HTML
-            email_msg = MIMEMultipart()
-        else:
-            # Simple text message
-            email_msg = EmailMessage()
+        # Always use MIMEMultipart for consistency
+        email_msg = MIMEMultipart()
 
-        # Set headers
-        email_msg["Subject"] = message.subject
-        email_msg["From"] = message.sender
-        email_msg["To"] = ", ".join(message.recipients)
+        # Set headers (sanitize to remove newlines)
+        email_msg["Subject"] = _sanitize_header(message.subject)
+        email_msg["From"] = _sanitize_header(message.sender)
+        email_msg["To"] = _sanitize_header(", ".join(message.recipients))
         email_msg["Date"] = email.utils.format_datetime(message.date)
-        email_msg["Message-ID"] = message.message_id
+        email_msg["Message-ID"] = _sanitize_header(message.message_id)
 
         if message.cc:
-            email_msg["Cc"] = ", ".join(message.cc)
+            email_msg["Cc"] = _sanitize_header(", ".join(message.cc))
         if message.bcc:
-            email_msg["Bcc"] = ", ".join(message.bcc)
+            email_msg["Bcc"] = _sanitize_header(", ".join(message.bcc))
         if message.in_reply_to:
-            email_msg["In-Reply-To"] = message.in_reply_to
+            email_msg["In-Reply-To"] = _sanitize_header(message.in_reply_to)
         if message.references:
-            email_msg["References"] = " ".join(message.references)
+            email_msg["References"] = _sanitize_header(" ".join(message.references))
 
         # Add custom headers
         for key, value in message.headers.items():
@@ -144,27 +152,23 @@ class MboxWriter:
                 "references",
             ]:
                 try:
-                    email_msg[key] = value
+                    email_msg[key] = _sanitize_header(value)
                 except Exception:
                     # Skip headers that can't be set
                     pass
 
         # Add body
-        if isinstance(email_msg, MIMEMultipart):
-            # Add text part
-            text_part = MIMEText(message.body, "plain", "utf-8")
-            email_msg.attach(text_part)
+        text_part = MIMEText(message.body, "plain", "utf-8")
+        email_msg.attach(text_part)
 
-            # Add HTML part if present
-            if message.html_body:
-                html_part = MIMEText(message.html_body, "html", "utf-8")
-                email_msg.attach(html_part)
+        # Add HTML part if present
+        if message.html_body:
+            html_part = MIMEText(message.html_body, "html", "utf-8")
+            email_msg.attach(html_part)
 
-            # Add attachments
-            for attachment in message.attachments:
-                self._add_attachment(email_msg, attachment)
-        else:
-            email_msg.set_content(message.body)
+        # Add attachments
+        for attachment in message.attachments:
+            self._add_attachment(email_msg, attachment)
 
         return email_msg
 
