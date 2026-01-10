@@ -200,12 +200,18 @@ class ReadPSTBackend(PSTBackend):
 
             try:
                 mbox = mailbox.mbox(str(mbox_file))
-                for mbox_message in mbox:
-                    yield self._convert_mbox_message(mbox_message, full_folder_path)
             except Exception as e:
-                # Log error but continue processing other messages
-                print(f"Warning: Failed to read message from {mbox_file}: {e}")
+                print(f"Warning: Failed to open mbox file {mbox_file}: {e}")
                 continue
+
+            for mbox_message in mbox:
+                try:
+                    yield self._convert_mbox_message(mbox_message, full_folder_path)
+                except Exception as e:
+                    # Log error but continue processing other messages
+                    subject = mbox_message.get("Subject", "(unknown)")
+                    print(f"Warning: Failed to convert message '{subject}': {e}")
+                    continue
 
     def _convert_mbox_message(
         self, mbox_message: mailbox.mboxMessage, folder_path: str
@@ -245,7 +251,7 @@ class ReadPSTBackend(PSTBackend):
         if mbox_message.is_multipart():
             for part in mbox_message.walk():
                 content_type = part.get_content_type()
-                content_disposition = part.get("Content-Disposition", "")
+                content_disposition = str(part.get("Content-Disposition", ""))
 
                 if "attachment" in content_disposition:
                     # This is an attachment
