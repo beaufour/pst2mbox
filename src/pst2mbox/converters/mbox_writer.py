@@ -21,17 +21,19 @@ class OutputStrategy(Enum):
     FLAT_WITH_HEADER = "flat"  # Single mbox with X-Folder headers
 
 
-def _sanitize_header(value: str) -> str:
+def _sanitize_header(value) -> str:
     """Sanitize a header value by removing newline characters.
 
     Args:
-        value: Header value to sanitize.
+        value: Header value to sanitize (can be str or Header object).
 
     Returns:
         Sanitized header value with newlines replaced by spaces.
     """
     if not value:
-        return value
+        return ""
+    # Convert Header objects to string
+    value = str(value)
     return value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
 
 
