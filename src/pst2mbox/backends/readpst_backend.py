@@ -213,6 +213,19 @@ class ReadPSTBackend(PSTBackend):
                     print(f"Warning: Failed to convert message '{subject}': {e}")
                     continue
 
+    def _header_to_str(self, value) -> str:
+        """Convert a header value to string.
+
+        Args:
+            value: Header value (can be str, Header object, or None).
+
+        Returns:
+            String representation of the header value.
+        """
+        if value is None:
+            return ""
+        return str(value)
+
     def _convert_mbox_message(
         self, mbox_message: mailbox.mboxMessage, folder_path: str
     ) -> Message:
@@ -225,23 +238,23 @@ class ReadPSTBackend(PSTBackend):
         Returns:
             Converted Message object.
         """
-        # Extract basic headers
-        subject = mbox_message.get("Subject", "(No Subject)")
-        sender = mbox_message.get("From", "")
-        message_id = mbox_message.get("Message-ID", "")
-        in_reply_to = mbox_message.get("In-Reply-To")
+        # Extract basic headers (convert Header objects to strings)
+        subject = self._header_to_str(mbox_message.get("Subject", "(No Subject)"))
+        sender = self._header_to_str(mbox_message.get("From", ""))
+        message_id = self._header_to_str(mbox_message.get("Message-ID", ""))
+        in_reply_to = self._header_to_str(mbox_message.get("In-Reply-To"))
 
         # Parse date
-        date_str = mbox_message.get("Date", "")
+        date_str = self._header_to_str(mbox_message.get("Date", ""))
         try:
             date = email.utils.parsedate_to_datetime(date_str)
         except Exception:
             date = datetime.now()
 
-        # Parse recipients
-        recipients = self._parse_addresses(mbox_message.get("To", ""))
-        cc = self._parse_addresses(mbox_message.get("Cc", ""))
-        bcc = self._parse_addresses(mbox_message.get("Bcc", ""))
+        # Parse recipients (convert Header objects to strings first)
+        recipients = self._parse_addresses(self._header_to_str(mbox_message.get("To", "")))
+        cc = self._parse_addresses(self._header_to_str(mbox_message.get("Cc", "")))
+        bcc = self._parse_addresses(self._header_to_str(mbox_message.get("Bcc", "")))
 
         # Extract body and attachments
         body = ""
@@ -276,8 +289,8 @@ class ReadPSTBackend(PSTBackend):
             if payload:
                 body = payload.decode("utf-8", errors="ignore")
 
-        # Extract all headers
-        headers = dict(mbox_message.items())
+        # Extract all headers (convert Header objects to strings)
+        headers = {k: self._header_to_str(v) for k, v in mbox_message.items()}
 
         return Message(
             subject=subject,
