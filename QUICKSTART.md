@@ -40,47 +40,98 @@ cd pst2mbox
 uv sync
 ```
 
-## 3. Basic Usage
+## 3. Choose Your Command
 
-Convert a PST file:
+This package provides two commands:
+
+| Command | Purpose | Best For |
+|---------|---------|----------|
+| `pst2mbox` | Convert PST to mbox format | Thunderbird, Apple Mail, archiving |
+| `pst2gmail` | Import PST directly to Gmail | Gmail users |
+
+---
+
+## Option A: Convert to mbox (`pst2mbox`)
+
+### Basic Conversion
+
 ```bash
 pst2mbox your-archive.pst -o output.mbox
 ```
 
 That's it! Your PST file is now converted to mbox format.
 
-## 4. Common Use Cases
+### Common Use Cases
 
-### Preview before converting
+**Preview before converting:**
 ```bash
 pst2mbox archive.pst -o output.mbox --dry-run --verbose
 ```
 
-### Convert only Inbox
+**Convert only Inbox:**
 ```bash
 pst2mbox archive.pst -o inbox.mbox --folder Inbox
 ```
 
-### Split by folders
+**Split by folders:**
 ```bash
 pst2mbox archive.pst -o output_dir/ --strategy folder
 ```
 
-## 5. Import into Email Client
+### Import mbox into Email Client
 
-### Thunderbird
-1. File → ImportExportTools NG → Import mbox file
-2. Select your .mbox file
-3. Choose destination folder
+**Thunderbird:**
+1. Install ImportExportTools NG add-on
+2. File → ImportExportTools NG → Import mbox file
+3. Select your .mbox file
 
-### Apple Mail
+**Apple Mail:**
 1. File → Import Mailboxes
 2. Select "Files in mbox format"
 3. Choose your .mbox file
 
-### Gmail
-1. Settings → Forwarding and POP/IMAP → Enable IMAP
-2. Use Thunderbird or another client to upload to IMAP
+---
+
+## Option B: Import to Gmail (`pst2gmail`)
+
+### One-Time Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a project and enable the Gmail API
+3. Create OAuth credentials (Desktop application)
+4. Download and save as `gmail_credentials.json`
+
+### Basic Import
+
+```bash
+pst2gmail archive.pst -e your-email@gmail.com
+```
+
+A browser opens for authorization. Messages import under `PST-Import-YYYY-MM-DD` labels.
+
+### Common Use Cases
+
+**Preview before importing:**
+```bash
+pst2gmail archive.pst -e user@gmail.com --dry-run
+```
+
+**Custom label prefix:**
+```bash
+pst2gmail archive.pst -e user@gmail.com --label-prefix "Old Mail"
+```
+
+**Import only Inbox:**
+```bash
+pst2gmail archive.pst -e user@gmail.com --folder Inbox
+```
+
+**Resume interrupted import:**
+```bash
+pst2gmail archive.pst -e user@gmail.com --resume
+```
+
+---
 
 ## Troubleshooting
 
@@ -93,10 +144,13 @@ pst2mbox archive.pst -o output_dir/ --strategy folder
 **"Permission denied"**
 → Check file permissions: `chmod +r your-file.pst`
 
+**Gmail OAuth errors**
+→ Ensure Gmail API is enabled and credentials are for "Desktop application"
+
 ## Next Steps
 
 - Read the full [README.md](README.md) for all features
-- See [PST2MBOX_PLAN.md](PST2MBOX_PLAN.md) for technical details
+- See [GMAIL_IMAP.md](GMAIL_IMAP.md) for Gmail technical notes
 - Report issues on GitHub
 
 ## Need Help?
