@@ -96,6 +96,11 @@ def find_credentials_path() -> Path:
     is_flag=True,
     help="Enable verbose output",
 )
+@click.option(
+    "--show-errors",
+    is_flag=True,
+    help="Show error details for failed messages",
+)
 @click.version_option(version="0.1.0", prog_name="pst2gmail")
 def main(
     pst_file: Path,
@@ -108,6 +113,7 @@ def main(
     force: bool,
     batch_size: int,
     verbose: bool,
+    show_errors: bool,
 ) -> None:
     """Import Microsoft Outlook PST files to Gmail via IMAP.
 
@@ -299,7 +305,7 @@ def main(
                         failed_count += 1
 
                 except Exception as e:
-                    if verbose:
+                    if verbose or show_errors:
                         console.print(
                             f"\n[red]Failed to upload message: {message.subject[:50]}[/red]"
                         )
