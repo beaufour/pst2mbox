@@ -1,6 +1,5 @@
 """Gmail IMAP uploader for importing messages to Gmail."""
 
-import base64
 import imaplib
 import logging
 import time
@@ -105,13 +104,32 @@ class GmailUploader:
             access_token: OAuth2 access token.
 
         Returns:
-            Base64 encoded authentication string.
+            Raw authentication string as bytes (imaplib handles base64 encoding).
         """
         auth_string = f"user={email}\x01auth=Bearer {access_token}\x01\x01"
-        return base64.b64encode(auth_string.encode("utf-8"))
+        return auth_string.encode("utf-8")
+
+    def _quote_mailbox(self, mailbox: str) -> str:
+        """Quote mailbox name for IMAP commands.
+
+        IMAP mailbox names containing spaces or special characters must be
+        quoted. imaplib doesn't do this automatically, so we handle it here.
+
+        Args:
+            mailbox: The mailbox/label name.
+
+        Returns:
+            Properly quoted mailbox name for IMAP.
+        """
+        # Escape backslashes and double quotes, then wrap in quotes
+        escaped = mailbox.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
 
     def ensure_label_exists(self, label: str) -> None:
         """Create a Gmail label if it doesn't exist.
+
+        Gmail requires parent labels to exist before creating children.
+        For "Parent/Child/Grandchild", we create each level in order.
 
         Args:
             label: Label name (can be nested like "Parent/Child").
@@ -122,11 +140,25 @@ class GmailUploader:
         if not self._imap:
             raise GmailConnectionError("Not connected to Gmail")
 
-        # Gmail uses "/" for nested labels
-        # CREATE command will create parent labels as needed
+        # Gmail requires creating parent labels first for nested hierarchy
+        # For "A/B/C", create "A", then "A/B", then "A/B/C"
+        parts = label.split("/")
+        for i in range(1, len(parts) + 1):
+            partial_label = "/".join(parts[:i])
+            if partial_label in self._created_labels:
+                continue
+
+            self._create_single_label(partial_label)
+
+    def _create_single_label(self, label: str) -> None:
+        """Create a single Gmail label (no hierarchy handling).
+
+        Args:
+            label: Label name to create.
+        """
         try:
-            # Quote label name for IMAP
-            quoted_label = f'"{label}"'
+            # Quote mailbox name for IMAP (imaplib doesn't auto-quote spaces)
+            quoted_label = self._quote_mailbox(label)
             status, response = self._imap.create(quoted_label)
 
             # ALREADYEXISTS is not an error
@@ -199,8 +231,8 @@ class GmailUploader:
             date_str = imaplib.Time2Internaldate(message.date.timestamp())
 
             # Upload message using APPEND
-            # Quote label for IMAP
-            quoted_label = f'"{label}"'
+            # Quote mailbox name for IMAP (imaplib doesn't auto-quote spaces)
+            quoted_label = self._quote_mailbox(label)
             result = self._imap.append(
                 quoted_label,
                 "",  # No flags
