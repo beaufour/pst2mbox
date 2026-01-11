@@ -83,6 +83,21 @@ class GmailUploader:
             logger.info(f"Connected to Gmail as {self.email}")
 
         except imaplib.IMAP4.error as e:
+            # Token may appear valid locally but be invalidated server-side.
+            # Try forcing a refresh and retry once.
+            if "AUTHENTICATIONFAILED" in str(e):
+                logger.warning("Authentication failed, forcing token refresh and retrying...")
+                try:
+                    credentials = self.oauth.force_refresh()
+                    self._imap = imaplib.IMAP4_SSL(self.IMAP_HOST, self.IMAP_PORT)
+                    auth_string = self._build_xoauth2_string(self.email, credentials.token)
+                    self._imap.authenticate("XOAUTH2", lambda x: auth_string)
+                    logger.info(f"Connected to Gmail as {self.email} (after token refresh)")
+                    return
+                except Exception as retry_error:
+                    raise GmailAuthenticationError(
+                        f"IMAP authentication failed after token refresh: {retry_error}"
+                    )
             raise GmailAuthenticationError(f"IMAP authentication failed: {e}")
         except Exception as e:
             raise GmailConnectionError(f"Failed to connect to Gmail: {e}")

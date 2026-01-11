@@ -139,6 +139,25 @@ class GoogleOAuth2:
         with open(self.token_path, "w") as f:
             json.dump(token_data, f, indent=2)
 
+    def force_refresh(self) -> Credentials:
+        """Force refresh the access token, even if it appears valid locally.
+
+        This is useful when the token has been invalidated server-side but
+        the local validity check still passes.
+
+        Returns:
+            Refreshed credentials.
+
+        Raises:
+            ValueError: If no credentials are loaded or refresh fails.
+        """
+        if not self._credentials or not self._credentials.refresh_token:
+            raise ValueError("No credentials with refresh token available")
+
+        self._credentials.refresh(Request())
+        self._save_token()
+        return self._credentials
+
     @property
     def access_token(self) -> str:
         """Get the current access token.
