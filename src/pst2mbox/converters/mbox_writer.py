@@ -1,16 +1,12 @@
 """Writer for converting messages to mbox format."""
 
-import email.encoders
-import email.utils
 import mailbox
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from enum import Enum
 from pathlib import Path
 from typing import Iterator
 
-from pst2mbox.models import Attachment, Message
+from pst2mbox.models import Message
+from pst2mbox.utils import message_to_rfc822, sanitize_header
 
 
 class OutputStrategy(Enum):
@@ -19,22 +15,6 @@ class OutputStrategy(Enum):
     SINGLE_FILE = "single"  # All messages in one mbox
     PER_FOLDER = "folder"  # One mbox per PST folder
     FLAT_WITH_HEADER = "flat"  # Single mbox with X-Folder headers
-
-
-def _sanitize_header(value) -> str:
-    """Sanitize a header value by removing newline characters.
-
-    Args:
-        value: Header value to sanitize (can be str or Header object).
-
-    Returns:
-        Sanitized header value with newlines replaced by spaces.
-    """
-    if not value:
-        return ""
-    # Convert Header objects to string
-    value = str(value)
-    return value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
 
 
 class MboxWriter:
@@ -100,110 +80,16 @@ class MboxWriter:
             if mbox_key not in self._mbox_files:
                 self._mbox_files[mbox_key] = mailbox.mbox(str(self.output_path))
 
-        # Convert message to email format
-        email_message = self._convert_to_email(message)
+        # Convert message to email format using shared utility
+        email_message = message_to_rfc822(message)
 
         # Add folder header for FLAT_WITH_HEADER strategy
         if self.strategy == OutputStrategy.FLAT_WITH_HEADER and message.folder_path:
-            email_message["X-Folder"] = _sanitize_header(message.folder_path)
+            email_message["X-Folder"] = sanitize_header(message.folder_path)
 
         # Add to mbox
         mbox = self._mbox_files[mbox_key]
         mbox.add(email_message)
-
-    def _convert_to_email(self, message: Message) -> MIMEMultipart:
-        """Convert internal Message to EmailMessage.
-
-        Args:
-            message: Message to convert.
-
-        Returns:
-            EmailMessage object.
-        """
-        # Always use MIMEMultipart for consistency
-        email_msg = MIMEMultipart()
-
-        # Set headers (sanitize to remove newlines)
-        email_msg["Subject"] = _sanitize_header(message.subject)
-        email_msg["From"] = _sanitize_header(message.sender)
-        email_msg["To"] = _sanitize_header(", ".join(message.recipients))
-        email_msg["Date"] = email.utils.format_datetime(message.date)
-        email_msg["Message-ID"] = _sanitize_header(message.message_id)
-
-        if message.cc:
-            email_msg["Cc"] = _sanitize_header(", ".join(message.cc))
-        if message.bcc:
-            email_msg["Bcc"] = _sanitize_header(", ".join(message.bcc))
-        if message.in_reply_to:
-            email_msg["In-Reply-To"] = _sanitize_header(message.in_reply_to)
-        if message.references:
-            email_msg["References"] = _sanitize_header(" ".join(message.references))
-
-        # Add custom headers
-        for key, value in message.headers.items():
-            # Skip headers we already set
-            if key.lower() not in [
-                "subject",
-                "from",
-                "to",
-                "date",
-                "message-id",
-                "cc",
-                "bcc",
-                "in-reply-to",
-                "references",
-            ]:
-                try:
-                    email_msg[key] = _sanitize_header(value)
-                except Exception:
-                    # Skip headers that can't be set
-                    pass
-
-        # Add body
-        text_part = MIMEText(message.body, "plain", "utf-8")
-        email_msg.attach(text_part)
-
-        # Add HTML part if present
-        if message.html_body:
-            html_part = MIMEText(message.html_body, "html", "utf-8")
-            email_msg.attach(html_part)
-
-        # Add attachments
-        for attachment in message.attachments:
-            self._add_attachment(email_msg, attachment)
-
-        return email_msg
-
-    def _add_attachment(
-        self, email_msg: MIMEMultipart, attachment: Attachment
-    ) -> None:
-        """Add an attachment to the email message.
-
-        Args:
-            email_msg: Email message to add attachment to.
-            attachment: Attachment to add.
-        """
-        # Parse content type
-        maintype, _, subtype = attachment.content_type.partition("/")
-        if not subtype:
-            maintype = "application"
-            subtype = "octet-stream"
-
-        # Create attachment part
-        part = MIMEBase(maintype, subtype)
-        part.set_payload(attachment.content)
-
-        # Encode attachment
-        email.encoders.encode_base64(part)
-
-        # Add header with filename
-        part.add_header(
-            "Content-Disposition",
-            "attachment",
-            filename=attachment.filename,
-        )
-
-        email_msg.attach(part)
 
     def close(self) -> None:
         """Close all open mbox files and flush changes."""

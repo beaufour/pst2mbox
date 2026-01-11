@@ -64,6 +64,10 @@ output_*/
 temp/
 tmp/
 
+# Gmail OAuth credentials (sensitive!)
+gmail_credentials.json
+gmail_token.json
+
 # Logs
 *.log
 pip-log.txt
