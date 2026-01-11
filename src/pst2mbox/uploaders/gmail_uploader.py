@@ -260,11 +260,18 @@ class GmailUploader:
             if status != "OK":
                 raise GmailUploadError(f"APPEND failed: {response}")
 
+            # Log if response looks unusual (should contain APPENDUID)
+            response_str = str(response)
+            if response and b"APPENDUID" not in response[0]:
+                logger.warning(
+                    f"IMAP APPEND response missing APPENDUID: {response_str}"
+                )
+
             # Add small delay to avoid rate limits
             time.sleep(self.UPLOAD_DELAY)
 
             logger.debug(f"Uploaded message: {message.subject[:50]}")
-            return str(response)
+            return response_str
 
         except (imaplib.IMAP4.abort, ConnectionError, BrokenPipeError) as e:
             # Connection was lost, try to reconnect

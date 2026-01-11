@@ -27,6 +27,7 @@ class ReadPSTBackend(PSTBackend):
         self._temp_dir: Path | None = None
         self._mbox_files: list[Path] = []
         self._folders: list[Folder] = []
+        self._conversion_errors: list[tuple[str, str]] = []  # (subject, error)
 
     def _check_readpst_available(self) -> bool:
         """Check if readpst is installed and available.
@@ -90,6 +91,9 @@ class ReadPSTBackend(PSTBackend):
         self._mbox_files = list(self._temp_dir.rglob("mbox"))
         # Also check for .mbox extension as a fallback
         self._mbox_files.extend(self._temp_dir.rglob("*.mbox"))
+
+        # Clear any previous conversion errors
+        self._conversion_errors = []
 
         # Build folder structure from mbox files
         self._build_folder_structure()
@@ -208,9 +212,9 @@ class ReadPSTBackend(PSTBackend):
                 try:
                     yield self._convert_mbox_message(mbox_message, full_folder_path)
                 except Exception as e:
-                    # Log error but continue processing other messages
-                    subject = mbox_message.get("Subject", "(unknown)")
-                    print(f"Warning: Failed to convert message '{subject}': {e}")
+                    # Track error and continue processing other messages
+                    subject = str(mbox_message.get("Subject", "(unknown)"))
+                    self._conversion_errors.append((subject, str(e)))
                     continue
 
     def _header_to_str(self, value) -> str:
@@ -342,3 +346,11 @@ class ReadPSTBackend(PSTBackend):
             return folder.message_count
 
         return sum(f.message_count for f in self._folders)
+
+    def get_conversion_errors(self) -> list[tuple[str, str]]:
+        """Get messages that failed to convert during iteration.
+
+        Returns:
+            List of (subject, error_message) tuples for failed conversions.
+        """
+        return self._conversion_errors.copy()

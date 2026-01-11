@@ -244,9 +244,34 @@ def main(
         if already_uploaded > 0:
             console.print(f"[green]✓[/green] {already_uploaded} messages already imported, {remaining} remaining")
 
-        # Dry run - just show what would happen
+        # Dry run - validate messages without uploading
         if dry_run:
-            console.print(f"\n[yellow]Would import {remaining} messages to Gmail[/yellow]")
+            console.print()
+            seen_ids: set[str] = set()
+            duplicate_subjects: list[str] = []
+            valid_count = 0
+
+            with console.status("[bold green]Validating messages..."):
+                for msg in backend.iter_messages(target_folder):
+                    if msg.message_id in seen_ids:
+                        duplicate_subjects.append(msg.subject[:60])
+                    else:
+                        seen_ids.add(msg.message_id)
+                        valid_count += 1
+
+            conversion_errors = backend.get_conversion_errors()
+
+            console.print(f"\n[yellow]Would import {valid_count} messages to Gmail[/yellow]")
+            if duplicate_subjects:
+                console.print(f"[yellow]⚠[/yellow] {len(duplicate_subjects)} messages would be skipped (duplicate message ID)")
+                if show_errors:
+                    for subject in duplicate_subjects:
+                        console.print(f"  [dim]•[/dim] {subject}")
+            if conversion_errors:
+                console.print(f"[yellow]⚠[/yellow] {len(conversion_errors)} messages failed to parse from PST")
+                if show_errors:
+                    for subject, error in conversion_errors:
+                        console.print(f"  [red]•[/red] {subject[:60]}: {error}")
             console.print(f"[yellow]Labels would be created under: {label_prefix or 'PST-Import-YYYY-MM-DD'}[/yellow]")
             backend.close()
             sys.exit(0)
@@ -281,11 +306,16 @@ def main(
             messages = backend.iter_messages(target_folder)
             imported_count = 0
             failed_count = 0
+            skipped_duplicates = 0
+            duplicate_subjects: list[str] = []
             batch_count = 0
 
             for message in messages:
-                # Skip if already uploaded
+                # Skip if already uploaded (either from resume or duplicate message ID)
                 if progress.is_uploaded(message.message_id):
+                    skipped_duplicates += 1
+                    duplicate_subjects.append(message.subject[:60])
+                    progress_bar.update(task, advance=1)
                     continue
 
                 try:
@@ -324,6 +354,9 @@ def main(
             # Save final progress
             progress.save(DEFAULT_PROGRESS_PATH)
 
+        # Get conversion errors from backend
+        conversion_errors = backend.get_conversion_errors()
+
         # Disconnect
         uploader.disconnect()
         backend.close()
@@ -331,7 +364,17 @@ def main(
         # Summary
         console.print(f"\n[green]✓[/green] Successfully imported {imported_count} messages")
         if failed_count > 0:
-            console.print(f"[yellow]⚠[/yellow] {failed_count} messages failed or skipped")
+            console.print(f"[yellow]⚠[/yellow] {failed_count} messages failed or skipped during upload")
+        if skipped_duplicates > 0:
+            console.print(f"[yellow]⚠[/yellow] {skipped_duplicates} messages skipped (duplicate message ID)")
+            if show_errors:
+                for subject in duplicate_subjects:
+                    console.print(f"  [dim]•[/dim] {subject}")
+        if conversion_errors:
+            console.print(f"[yellow]⚠[/yellow] {len(conversion_errors)} messages failed to parse from PST")
+            if show_errors:
+                for subject, error in conversion_errors:
+                    console.print(f"  [red]•[/red] {subject[:60]}: {error}")
         console.print(f"[green]✓[/green] Messages are in Gmail under label: {uploader.label_prefix}")
 
     except FileNotFoundError as e:
