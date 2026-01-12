@@ -1,6 +1,7 @@
 """Command-line interface for pst2gmail - import PST to Gmail via IMAP."""
 
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -101,6 +102,12 @@ def find_credentials_path() -> Path:
     is_flag=True,
     help="Show error details for failed messages",
 )
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write summary and errors to this file",
+)
 @click.version_option(version="0.1.0", prog_name="pst2gmail")
 def main(
     pst_file: Path,
@@ -114,6 +121,7 @@ def main(
     batch_size: int,
     verbose: bool,
     show_errors: bool,
+    log_file: Optional[Path],
 ) -> None:
     """Import Microsoft Outlook PST files to Gmail via IMAP.
 
@@ -302,7 +310,9 @@ def main(
             console=console,
         ) as progress_bar:
             task = progress_bar.add_task(
-                "Importing messages...", total=remaining
+                "Importing messages...",
+                total=total_messages,
+                completed=already_uploaded,
             )
 
             messages = backend.iter_messages(target_folder)
@@ -381,6 +391,38 @@ def main(
                     id_str = f" [{message_id}]" if message_id else ""
                     console.print(f"  [red]•[/red] {subject[:60]}{id_str}: {error}")
         console.print(f"[green]✓[/green] Messages are in Gmail under label: {uploader.label_prefix}")
+
+        # Write log file if requested
+        if log_file:
+            with open(log_file, "w") as f:
+                f.write(f"pst2gmail Import Log\n")
+                f.write(f"====================\n")
+                f.write(f"Date: {datetime.now().isoformat()}\n")
+                f.write(f"PST File: {pst_file}\n")
+                f.write(f"Email: {email}\n")
+                f.write(f"Label: {uploader.label_prefix}\n")
+                f.write(f"\n")
+                f.write(f"Summary\n")
+                f.write(f"-------\n")
+                f.write(f"Successfully imported: {imported_count}\n")
+                f.write(f"Failed during upload: {failed_count}\n")
+                f.write(f"Skipped (duplicates): {skipped_duplicates}\n")
+                f.write(f"Failed to parse from PST: {len(conversion_errors)}\n")
+                if duplicates:
+                    f.write(f"\n")
+                    f.write(f"Duplicate Messages ({len(duplicates)})\n")
+                    f.write(f"-" * 40 + "\n")
+                    for subject, message_id in duplicates:
+                        id_str = f" [{message_id}]" if message_id else ""
+                        f.write(f"  {subject}{id_str}\n")
+                if conversion_errors:
+                    f.write(f"\n")
+                    f.write(f"PST Conversion Errors ({len(conversion_errors)})\n")
+                    f.write(f"-" * 40 + "\n")
+                    for message_id, subject, error in conversion_errors:
+                        id_str = f" [{message_id}]" if message_id else ""
+                        f.write(f"  {subject[:60]}{id_str}: {error}\n")
+            console.print(f"[green]✓[/green] Log written to: {log_file}")
 
     except FileNotFoundError as e:
         console.print(f"[red]✗[/red] {e}")

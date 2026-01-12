@@ -37,6 +37,7 @@ class GmailUploader:
 
     IMAP_HOST = "imap.gmail.com"
     IMAP_PORT = 993
+    IMAP_TIMEOUT = 60  # Socket timeout in seconds
     MAX_RETRIES = 3
     RETRY_DELAY_BASE = 2  # Exponential backoff base in seconds
     UPLOAD_DELAY = 0.1  # 100ms delay between uploads to avoid rate limits
@@ -74,7 +75,9 @@ class GmailUploader:
             credentials = self.oauth.get_credentials()
 
             # Connect to Gmail IMAP
-            self._imap = imaplib.IMAP4_SSL(self.IMAP_HOST, self.IMAP_PORT)
+            self._imap = imaplib.IMAP4_SSL(
+                self.IMAP_HOST, self.IMAP_PORT, timeout=self.IMAP_TIMEOUT
+            )
 
             # Authenticate using XOAUTH2
             auth_string = self._build_xoauth2_string(self.email, credentials.token)
@@ -89,7 +92,9 @@ class GmailUploader:
                 logger.warning("Authentication failed, forcing token refresh and retrying...")
                 try:
                     credentials = self.oauth.force_refresh()
-                    self._imap = imaplib.IMAP4_SSL(self.IMAP_HOST, self.IMAP_PORT)
+                    self._imap = imaplib.IMAP4_SSL(
+                        self.IMAP_HOST, self.IMAP_PORT, timeout=self.IMAP_TIMEOUT
+                    )
                     auth_string = self._build_xoauth2_string(self.email, credentials.token)
                     self._imap.authenticate("XOAUTH2", lambda x: auth_string)
                     logger.info(f"Connected to Gmail as {self.email} (after token refresh)")
@@ -273,8 +278,8 @@ class GmailUploader:
             logger.debug(f"Uploaded message: {message.subject[:50]}")
             return response_str
 
-        except (imaplib.IMAP4.abort, ConnectionError, BrokenPipeError) as e:
-            # Connection was lost, try to reconnect
+        except (imaplib.IMAP4.abort, ConnectionError, BrokenPipeError, TimeoutError) as e:
+            # Connection was lost or timed out, try to reconnect
             if retry_count < self.MAX_RETRIES:
                 delay = self.RETRY_DELAY_BASE ** (retry_count + 1)
                 logger.warning(
