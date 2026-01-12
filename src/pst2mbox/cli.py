@@ -54,6 +54,11 @@ console = Console()
     is_flag=True,
     help="Preview conversion without writing files",
 )
+@click.option(
+    "--show-errors",
+    is_flag=True,
+    help="Show error details for failed messages",
+)
 @click.version_option(version="0.1.0", prog_name="pst2mbox")
 def main(
     pst_file: Path,
@@ -62,6 +67,7 @@ def main(
     filter_folder: Optional[str],
     verbose: bool,
     dry_run: bool,
+    show_errors: bool,
 ) -> None:
     """Convert Microsoft Outlook PST files to mbox format.
 
@@ -161,7 +167,16 @@ def main(
                         count += 1
                         progress.update(task, advance=1)
 
+            # Get conversion errors
+            conversion_errors = backend.get_conversion_errors()
+
             console.print(f"\n[green]✓[/green] Successfully converted {count} messages")
+            if conversion_errors:
+                console.print(f"[yellow]⚠[/yellow] {len(conversion_errors)} messages failed to parse from PST")
+                if show_errors:
+                    for message_id, subject, error in conversion_errors:
+                        id_str = f" [{message_id}]" if message_id else ""
+                        console.print(f"  [red]•[/red] {subject[:60]}{id_str}: {error}")
             console.print(f"[green]✓[/green] Output written to: {output}")
         else:
             console.print(

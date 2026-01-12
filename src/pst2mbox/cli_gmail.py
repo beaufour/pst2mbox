@@ -248,13 +248,13 @@ def main(
         if dry_run:
             console.print()
             seen_ids: set[str] = set()
-            duplicate_subjects: list[str] = []
+            duplicates: list[tuple[str, str]] = []  # (subject, message_id)
             valid_count = 0
 
             with console.status("[bold green]Validating messages..."):
                 for msg in backend.iter_messages(target_folder):
                     if msg.message_id in seen_ids:
-                        duplicate_subjects.append(msg.subject[:60])
+                        duplicates.append((msg.subject[:60], msg.message_id))
                     else:
                         seen_ids.add(msg.message_id)
                         valid_count += 1
@@ -262,16 +262,18 @@ def main(
             conversion_errors = backend.get_conversion_errors()
 
             console.print(f"\n[yellow]Would import {valid_count} messages to Gmail[/yellow]")
-            if duplicate_subjects:
-                console.print(f"[yellow]⚠[/yellow] {len(duplicate_subjects)} messages would be skipped (duplicate message ID)")
+            if duplicates:
+                console.print(f"[yellow]⚠[/yellow] {len(duplicates)} messages would be skipped (duplicate message ID)")
                 if show_errors:
-                    for subject in duplicate_subjects:
-                        console.print(f"  [dim]•[/dim] {subject}")
+                    for subject, message_id in duplicates:
+                        id_str = f" [{message_id}]" if message_id else ""
+                        console.print(f"  [dim]•[/dim] {subject}{id_str}")
             if conversion_errors:
                 console.print(f"[yellow]⚠[/yellow] {len(conversion_errors)} messages failed to parse from PST")
                 if show_errors:
-                    for subject, error in conversion_errors:
-                        console.print(f"  [red]•[/red] {subject[:60]}: {error}")
+                    for message_id, subject, error in conversion_errors:
+                        id_str = f" [{message_id}]" if message_id else ""
+                        console.print(f"  [red]•[/red] {subject[:60]}{id_str}: {error}")
             console.print(f"[yellow]Labels would be created under: {label_prefix or 'PST-Import-YYYY-MM-DD'}[/yellow]")
             backend.close()
             sys.exit(0)
@@ -307,14 +309,14 @@ def main(
             imported_count = 0
             failed_count = 0
             skipped_duplicates = 0
-            duplicate_subjects: list[str] = []
+            duplicates: list[tuple[str, str]] = []  # (subject, message_id)
             batch_count = 0
 
             for message in messages:
                 # Skip if already uploaded (either from resume or duplicate message ID)
                 if progress.is_uploaded(message.message_id):
                     skipped_duplicates += 1
-                    duplicate_subjects.append(message.subject[:60])
+                    duplicates.append((message.subject[:60], message.message_id))
                     progress_bar.update(task, advance=1)
                     continue
 
@@ -336,8 +338,9 @@ def main(
 
                 except Exception as e:
                     if verbose or show_errors:
+                        id_str = f" [{message.message_id}]" if message.message_id else ""
                         console.print(
-                            f"\n[red]Failed to upload message: {message.subject[:50]}[/red]"
+                            f"\n[red]Failed to upload message: {message.subject[:50]}{id_str}[/red]"
                         )
                         console.print(f"[red]Error: {e}[/red]")
                     progress.mark_failed(message.message_id)
@@ -368,13 +371,15 @@ def main(
         if skipped_duplicates > 0:
             console.print(f"[yellow]⚠[/yellow] {skipped_duplicates} messages skipped (duplicate message ID)")
             if show_errors:
-                for subject in duplicate_subjects:
-                    console.print(f"  [dim]•[/dim] {subject}")
+                for subject, message_id in duplicates:
+                    id_str = f" [{message_id}]" if message_id else ""
+                    console.print(f"  [dim]•[/dim] {subject}{id_str}")
         if conversion_errors:
             console.print(f"[yellow]⚠[/yellow] {len(conversion_errors)} messages failed to parse from PST")
             if show_errors:
-                for subject, error in conversion_errors:
-                    console.print(f"  [red]•[/red] {subject[:60]}: {error}")
+                for message_id, subject, error in conversion_errors:
+                    id_str = f" [{message_id}]" if message_id else ""
+                    console.print(f"  [red]•[/red] {subject[:60]}{id_str}: {error}")
         console.print(f"[green]✓[/green] Messages are in Gmail under label: {uploader.label_prefix}")
 
     except FileNotFoundError as e:
