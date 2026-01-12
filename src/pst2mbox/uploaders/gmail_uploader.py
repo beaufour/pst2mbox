@@ -9,7 +9,7 @@ from typing import Optional
 
 from pst2mbox.auth import GoogleOAuth2
 from pst2mbox.models import Message
-from pst2mbox.utils import message_to_rfc822
+from pst2mbox.utils import message_to_rfc822, message_to_rfc822_stripped
 
 logger = logging.getLogger(__name__)
 
@@ -238,14 +238,41 @@ class GmailUploader:
             # Convert message to RFC822 format
             email_message = message_to_rfc822(message)
             message_bytes = email_message.as_bytes()
+            max_size = 25 * 1024 * 1024  # Gmail limit is 25MB
 
-            # Check message size (Gmail limit is 25MB)
-            if len(message_bytes) > 25 * 1024 * 1024:
-                logger.warning(
-                    f"Message too large ({len(message_bytes)} bytes), skipping: "
-                    f"{message.subject[:50]}"
-                )
-                return None
+            # Check message size and strip attachments if too large
+            if len(message_bytes) > max_size:
+                if message.attachments:
+                    original_size = len(message_bytes)
+                    attachment_count = len(message.attachments)
+                    attachment_size = sum(att.size for att in message.attachments)
+                    attachment_names = [att.filename for att in message.attachments]
+
+                    # Try without attachments
+                    email_message = message_to_rfc822_stripped(message)
+                    message_bytes = email_message.as_bytes()
+
+                    if len(message_bytes) <= max_size:
+                        logger.warning(
+                            f"Message too large ({original_size:,} bytes), stripped "
+                            f"{attachment_count} attachment(s) ({attachment_size:,} bytes): "
+                            f"{message.subject[:50]} - Removed: {attachment_names}"
+                        )
+                    else:
+                        # Still too large even without attachments
+                        logger.warning(
+                            f"Message too large even without attachments "
+                            f"({len(message_bytes):,} bytes), skipping: "
+                            f"{message.subject[:50]}"
+                        )
+                        return None
+                else:
+                    # No attachments to strip
+                    logger.warning(
+                        f"Message too large ({len(message_bytes):,} bytes) with no "
+                        f"attachments to strip, skipping: {message.subject[:50]}"
+                    )
+                    return None
 
             # Format date for IMAP APPEND
             date_str = imaplib.Time2Internaldate(message.date.timestamp())
