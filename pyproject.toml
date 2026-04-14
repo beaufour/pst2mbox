@@ -20,7 +20,7 @@ pst2gmail = "pst2mbox.cli_gmail:main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "mypy>=1.8.0",
     "ruff>=0.1.0",
 ]
