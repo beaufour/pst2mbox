@@ -6,7 +6,15 @@ from typing import Optional
 
 import click
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 from pst2mbox.backends.base import PSTBackend
 from pst2mbox.backends.readpst_backend import ReadPSTBackend
@@ -88,7 +96,15 @@ def main(
 
         imported_count = failed_count = skipped_count = batch_count = 0
         current_folder = ""
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), TimeRemainingColumn(), console=console) as progress_bar:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress_bar:
             task = progress_bar.add_task(progress_description("", 0, 0, 0), total=total_messages)
             for message in backend.iter_messages(target_folder):
                 if message.folder_path != current_folder:

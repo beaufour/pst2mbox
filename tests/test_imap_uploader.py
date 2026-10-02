@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from pst2mbox.models import Message
-from pst2mbox.uploaders.imap_uploader import IMAPUploader
+from pst2mbox.uploaders.imap_uploader import IMAPUploader, encode_modified_utf7
 
 
 class FakeIMAP:
@@ -59,6 +59,12 @@ def uploader(monkeypatch):
     result = IMAPUploader("imap.example.com", 993, "user", "secret")
     result.connect()
     return result
+
+
+def test_encodes_non_ascii_and_ampersand_mailbox_names():
+    assert encode_modified_utf7("Problemas de sincronización & Archivo") == (
+        "Problemas de sincronizaci&APM-n &- Archivo"
+    )
 
 
 def test_creates_server_hierarchy_and_uploads(monkeypatch):

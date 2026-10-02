@@ -1,6 +1,7 @@
 """Generic IMAP uploader for restoring PST messages."""
 
 import email
+import base64
 import imaplib
 import logging
 import re
@@ -11,6 +12,27 @@ from pst2mbox.models import Message
 from pst2mbox.utils import message_to_rfc822
 
 logger = logging.getLogger(__name__)
+
+
+def encode_modified_utf7(value: str) -> str:
+    """Encode an IMAP mailbox name using modified UTF-7 (RFC 3501)."""
+    result: list[str] = []
+    non_ascii: list[str] = []
+
+    def flush_non_ascii() -> None:
+        if non_ascii:
+            encoded = base64.b64encode("".join(non_ascii).encode("utf-16-be"))
+            result.append("&" + encoded.decode("ascii").rstrip("=").replace("/", ",") + "-")
+            non_ascii.clear()
+
+    for character in value:
+        if " " <= character <= "~":
+            flush_non_ascii()
+            result.append("&-" if character == "&" else character)
+        else:
+            non_ascii.append(character)
+    flush_non_ascii()
+    return "".join(result)
 
 
 class IMAPConnectionError(Exception):
@@ -78,7 +100,8 @@ class IMAPUploader:
 
     @staticmethod
     def _quote_mailbox(mailbox: str) -> str:
-        return '"' + mailbox.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        encoded = encode_modified_utf7(mailbox)
+        return '"' + encoded.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     def mailbox_for_folder(self, folder_path: str) -> str:
         return self._delimiter.join(part for part in folder_path.split("/") if part)
