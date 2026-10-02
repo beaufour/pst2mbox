@@ -1,7 +1,8 @@
 """Generic IMAP uploader for restoring PST messages."""
 
-import email
 import base64
+import email
+import hashlib
 import imaplib
 import logging
 import re
@@ -12,6 +13,7 @@ from pst2mbox.models import Message
 from pst2mbox.utils import message_to_rfc822
 
 logger = logging.getLogger(__name__)
+RESTORE_ID_HEADER = "X-PST2MBOX-ID"
 
 
 def encode_modified_utf7(value: str) -> str:
@@ -123,37 +125,92 @@ class IMAPUploader:
     def _normalized_header(value: Optional[str]) -> str:
         return " ".join(value.split()) if value else ""
 
-    def _is_duplicate(self, message: Message, mailbox: str) -> bool:
-        message_id = self._normalized_header(message.message_id)
-        received = self._normalized_header(message.headers.get("Received"))
-        if not message_id or not received:
-            return False
+    @staticmethod
+    def _quote_search_value(value: str) -> str:
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    @staticmethod
+    def _restore_id(message: Message) -> str:
+        """Return a stable identifier for this source message and folder."""
+        digest = hashlib.sha256()
+        values = [
+            message.folder_path,
+            message.message_id,
+            message.subject,
+            message.sender,
+            ",".join(message.recipients),
+            message.date.isoformat(),
+            message.body,
+            message.html_body or "",
+        ]
+        for value in values:
+            digest.update(value.encode("utf-8", errors="surrogatepass"))
+            digest.update(b"\0")
+        for attachment in message.attachments:
+            digest.update(attachment.filename.encode("utf-8", errors="surrogatepass"))
+            digest.update(b"\0")
+            digest.update(attachment.content)
+            digest.update(b"\0")
+        return digest.hexdigest()
+
+    def _search_header(self, header: str, value: str) -> list[str]:
         if not self._imap:
             raise IMAPConnectionError("Not connected to IMAP")
+        status, response = self._imap.search(
+            None, "HEADER", header, self._quote_search_value(value)
+        )
+        if status != "OK" or not response or not isinstance(response[0], bytes):
+            return []
+        return response[0].decode("ascii").split()
 
+    def _fetch_headers(self, sequence_number: str, fields: str) -> list[email.message.Message]:
+        if not self._imap:
+            raise IMAPConnectionError("Not connected to IMAP")
+        status, data = self._imap.fetch(
+            sequence_number, f"(BODY.PEEK[HEADER.FIELDS ({fields})])"
+        )
+        if status != "OK":
+            return []
+        return [
+            email.message_from_bytes(item[1])
+            for item in data or []
+            if isinstance(item, tuple)
+        ]
+
+    def _is_duplicate(self, message: Message, mailbox: str, restore_id: str) -> bool:
+        if not self._imap:
+            raise IMAPConnectionError("Not connected to IMAP")
         status, _ = self._imap.select(self._quote_mailbox(mailbox), readonly=True)
         if status != "OK":
             raise IMAPUploadError(f"Failed to select mailbox {mailbox}")
-        status, response = self._imap.search(None, "HEADER", "Message-ID", message_id)
-        if status != "OK" or not response:
+
+        for sequence_number in self._search_header(RESTORE_ID_HEADER, restore_id):
+            for headers in self._fetch_headers(sequence_number, RESTORE_ID_HEADER):
+                if self._normalized_header(headers.get(RESTORE_ID_HEADER)) == restore_id:
+                    return True
+
+        message_id = self._normalized_header(message.message_id)
+        if not message_id:
+            # ponytail: legacy headerless messages have no safe remote key; the restore ID covers future runs.
             return False
-        first_response = response[0]
-        if not isinstance(first_response, bytes):
-            return False
-        for sequence_number in first_response.split():
-            status, data = self._imap.fetch(
-                sequence_number.decode("ascii"),
-                "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID RECEIVED)])",
-            )
-            if status != "OK":
-                continue
-            for item in data or []:
-                if not isinstance(item, tuple):
+        received = self._normalized_header(message.headers.get("Received"))
+        legacy_headers = {
+            "Date": self._normalized_header(email.utils.format_datetime(message.date)),
+            "From": self._normalized_header(message.sender),
+            "To": self._normalized_header(", ".join(message.recipients)),
+        }
+        for sequence_number in self._search_header("Message-ID", message_id):
+            for headers in self._fetch_headers(sequence_number, "MESSAGE-ID RECEIVED DATE FROM TO"):
+                if self._normalized_header(headers.get("Message-ID")) != message_id:
                     continue
-                headers = email.message_from_bytes(item[1])
-                if self._normalized_header(headers.get("Message-ID")) == message_id and any(
+                if received and any(
                     self._normalized_header(value) == received
                     for value in headers.get_all("Received", [])
+                ):
+                    return True
+                if all(
+                    self._normalized_header(headers.get(name)) == value
+                    for name, value in legacy_headers.items()
                 ):
                     return True
         return False
@@ -167,13 +224,16 @@ class IMAPUploader:
             raise IMAPUploadError("Message has no destination mailbox")
         try:
             self.ensure_mailbox_exists(mailbox)
-            if self._is_duplicate(message, mailbox):
+            restore_id = self._restore_id(message)
+            if self._is_duplicate(message, mailbox, restore_id):
                 return "duplicate"
+            email_message = message_to_rfc822(message)
+            email_message[RESTORE_ID_HEADER] = restore_id
             append_result = self._imap.append(
                 self._quote_mailbox(mailbox),
                 "",
                 imaplib.Time2Internaldate(message.date.timestamp()),
-                message_to_rfc822(message).as_bytes(),
+                email_message.as_bytes(),
             )
             if not isinstance(append_result, tuple):
                 raise IMAPUploadError(f"APPEND failed: {append_result}")
