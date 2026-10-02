@@ -17,6 +17,11 @@ console = Console()
 DEFAULT_PROGRESS_PATH = Path.home() / ".config" / "pst2mbox" / "imap_import_progress.json"
 
 
+def progress_description(folder: str, uploaded: int, skipped: int, failed: int) -> str:
+    """Build the compact status line shown during restoration."""
+    return f"Folder: {folder or '(root)'} | uploaded: {uploaded} | skipped: {skipped} | failed: {failed}"
+
+
 @click.command()
 @click.argument("pst_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--imap-host", required=True, help="IMAP server hostname")
@@ -82,11 +87,18 @@ def main(
             uploader.connect()
 
         imported_count = failed_count = skipped_count = batch_count = 0
+        current_folder = ""
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), TimeRemainingColumn(), console=console) as progress_bar:
-            task = progress_bar.add_task("Restoring messages...", total=total_messages)
+            task = progress_bar.add_task(progress_description("", 0, 0, 0), total=total_messages)
             for message in backend.iter_messages(target_folder):
+                if message.folder_path != current_folder:
+                    current_folder = message.folder_path
+                    progress.set_current_folder(current_folder)
+                    if verbose:
+                        console.log(f"[cyan]Restoring folder:[/cyan] {current_folder}")
                 if progress.is_uploaded(message.message_id):
                     skipped_count += 1
+                    result = "resume duplicate"
                 else:
                     try:
                         result = uploader.upload_message(message)
@@ -98,9 +110,18 @@ def main(
                     except Exception as error:
                         progress.mark_failed(message.message_id)
                         failed_count += 1
+                        result = "failed"
                         if verbose or show_errors:
-                            console.print(f"[red]Failed: {message.subject[:50]}: {error}[/red]")
-                progress_bar.update(task, advance=1)
+                            console.log(f"[red]Failed:[/red] {message.subject[:50]}: {error}")
+                if verbose and result != "failed":
+                    console.log(f"[dim]{result}:[/dim] {message.subject[:50]} [{message.message_id}]")
+                progress_bar.update(
+                    task,
+                    advance=1,
+                    description=progress_description(
+                        current_folder, imported_count, skipped_count, failed_count
+                    ),
+                )
                 batch_count += 1
                 if batch_count >= batch_size:
                     progress.save(DEFAULT_PROGRESS_PATH)
