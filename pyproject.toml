@@ -10,13 +10,11 @@ requires-python = ">=3.10"
 dependencies = [
     "click>=8.1.0",
     "rich>=13.0.0",
-    "google-auth>=2.0.0",
-    "google-auth-oauthlib>=1.0.0",
 ]
 
 [project.scripts]
 pst2mbox = "pst2mbox.cli:main"
-pst2gmail = "pst2mbox.cli_gmail:main"
+pst2imap = "pst2mbox.cli_imap:main"
 
 [dependency-groups]
 dev = [

@@ -1,12 +1,12 @@
 # pst2mbox
 
-Convert Microsoft Outlook PST files to mbox format or import directly to Gmail.
+Convert Microsoft Outlook PST files to mbox format or restore them directly to an IMAP account.
 
 ## Features
 
 - **Two commands:**
   - `pst2mbox` - Convert PST to mbox format for local use or import to other clients
-  - `pst2gmail` - Import PST directly to Gmail via IMAP (OAuth2)
+  - `pst2imap` - Restore PST directly to an IMAP account (TLS + password)
 - Convert PST files (both ANSI and Unicode formats)
 - Multiple output strategies for mbox conversion
 - Filter conversion to specific folders
@@ -108,60 +108,40 @@ pst2mbox archive.pst -o work.mbox --folder "Inbox/Work"
 --help                          Show help
 ```
 
-### pst2gmail - Import to Gmail
+### pst2imap - Restore to IMAP
 
-Import PST files directly to Gmail via IMAP. Messages are organized under nested labels preserving the original folder structure.
-
-#### Setup OAuth Credentials
-
-Before using `pst2gmail`, you need to set up Google OAuth credentials:
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create or select a project
-3. Enable the Gmail API
-4. Go to Credentials → Create Credentials → OAuth client ID
-5. Select "Desktop application"
-6. Download the credentials JSON file
-7. Save as `gmail_credentials.json` in your working directory (or `~/.config/pst2mbox/gmail_credentials.json`)
+Restore PST files directly to any IMAP server over TLS. The password is requested securely and is never stored. Folder paths from the PST are recreated directly in the destination account.
 
 #### Basic Import
 
 ```bash
-pst2gmail archive.pst -e user@gmail.com
-```
-
-On first run, a browser window opens for OAuth authorization. Messages are imported under a label like `PST-Import-2024-01-11` with nested sublabels for each folder.
-
-#### Custom Label Prefix
-
-```bash
-pst2gmail archive.pst -e user@gmail.com --label-prefix "Old Mail/Outlook"
+pst2imap archive.pst --imap-host imap.example.com --username user@example.com
 ```
 
 #### Import Specific Folder
 
 ```bash
-pst2gmail archive.pst -e user@gmail.com --folder Inbox
+pst2imap archive.pst --imap-host imap.example.com --username user@example.com --folder Inbox
 ```
 
 #### Resume Interrupted Import
 
 ```bash
-pst2gmail archive.pst -e user@gmail.com --resume
+pst2imap archive.pst --imap-host imap.example.com --username user@example.com --resume
 ```
 
 #### Preview Mode
 
 ```bash
-pst2gmail archive.pst -e user@gmail.com --dry-run
+pst2imap archive.pst --imap-host imap.example.com --username user@example.com --dry-run
 ```
 
 #### Options
 
 ```
--e, --email TEXT       Gmail address to import to [required]
---credentials PATH     Path to OAuth credentials JSON
---label-prefix TEXT    Prefix for Gmail labels (default: PST-Import-YYYY-MM-DD)
+--imap-host TEXT       IMAP server hostname [required]
+--imap-port INTEGER    IMAP TLS port (default: 993)
+--username TEXT        IMAP account username [required]
 --folder TEXT          Only import from this folder
 --dry-run              Preview without uploading
 --resume               Resume a previously interrupted import
@@ -180,10 +160,10 @@ pst2mbox uses a modular architecture:
 pst2mbox/
    backends/          # PST file readers (readpst)
    converters/        # Output format writers (mbox)
-   uploaders/         # Gmail IMAP uploader
+   uploaders/         # Generic IMAP uploader
    models/            # Internal message representation
    cli.py             # pst2mbox command
-   cli_gmail.py       # pst2gmail command
+   cli_imap.py        # pst2imap command
 ```
 
 ### Backend System
@@ -195,7 +175,7 @@ The tool uses a pluggable backend system. Currently implemented:
 ### Output Formats
 
 - **mbox**: Standard Unix mailbox format (via `pst2mbox`)
-- **Gmail**: Direct IMAP upload with OAuth2 (via `pst2gmail`)
+- **IMAP**: Direct TLS upload with account credentials (via `pst2imap`)
 
 ## Development
 
@@ -241,21 +221,15 @@ For very large PST files (>10GB):
 - Use `--folder` to convert one folder at a time
 - Ensure you have sufficient disk space (2-3x the PST size)
 - For mbox: use `--strategy folder` to split output
-- For Gmail: use `--resume` if interrupted
+- For IMAP: use `--resume` if interrupted
 
 ### Permission errors
 
 Ensure you have read access to the PST file and write access to the output directory.
 
-### Gmail OAuth errors
+### IMAP login errors
 
-- Ensure you've enabled the Gmail API in Google Cloud Console
-- Check that your OAuth credentials are for a "Desktop application"
-- Delete `~/.config/pst2mbox/gmail_token.json` and re-authorize if token expired
-
-### Gmail label issues
-
-See [GMAIL_IMAP.md](GMAIL_IMAP.md) for technical notes on Gmail's IMAP implementation.
+- Verify the server hostname, TLS port, username, and password (or app password).
 
 ## Technical Details
 
@@ -281,7 +255,7 @@ Typical conversion rates on modern hardware:
 - Medium PST (1-5GB): 10-30 minutes
 - Large PST (10-50GB): 1-3 hours
 
-Gmail imports may be slower due to IMAP rate limiting.
+IMAP imports may be slower if the server applies rate limiting.
 
 ## Contributing
 
@@ -299,6 +273,5 @@ MIT License - see LICENSE file for details
 
 ## See Also
 
-- [GMAIL_IMAP.md](GMAIL_IMAP.md) - Technical notes on Gmail IMAP
 - [readpst](https://linux.die.net/man/1/readpst) - The underlying PST extraction tool
 - [mbox format](https://en.wikipedia.org/wiki/Mbox) - Unix mailbox format specification

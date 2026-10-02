@@ -1,11 +1,10 @@
 """readpst-based backend for reading PST files."""
 
-import email
+from email import utils
 import mailbox
 import shutil
 import subprocess
 import tempfile
-from email.message import EmailMessage
 from pathlib import Path
 from typing import Iterator
 
@@ -101,6 +100,7 @@ class ReadPSTBackend(PSTBackend):
 
     def _build_folder_structure(self) -> None:
         """Build folder structure from extracted mbox files."""
+        assert self._temp_dir is not None
         folders_dict: dict[str, Folder] = {}
 
         for mbox_file in self._mbox_files:
@@ -153,6 +153,7 @@ class ReadPSTBackend(PSTBackend):
         """
         if not self._is_open:
             raise RuntimeError("PST file is not open. Call open() first.")
+        assert self._temp_dir is not None
         return self._folders.copy()
 
     def iter_messages(
@@ -172,6 +173,7 @@ class ReadPSTBackend(PSTBackend):
         """
         if not self._is_open:
             raise RuntimeError("PST file is not open. Call open() first.")
+        assert self._temp_dir is not None
 
         # Determine which mbox files to process
         mbox_files_to_process = []
@@ -252,7 +254,7 @@ class ReadPSTBackend(PSTBackend):
         # Parse date
         date_str = self._header_to_str(mbox_message.get("Date", ""))
         try:
-            date = email.utils.parsedate_to_datetime(date_str)
+            date = utils.parsedate_to_datetime(date_str)
         except Exception:
             date = datetime.now()
 
@@ -274,7 +276,9 @@ class ReadPSTBackend(PSTBackend):
                 if "attachment" in content_disposition:
                     # This is an attachment
                     filename = part.get_filename() or "unknown"
-                    content = part.get_payload(decode=True) or b""
+                    content = part.get_payload(decode=True)
+                    if not isinstance(content, bytes):
+                        content = b""
                     attachments.append(
                         Attachment(
                             filename=filename,
@@ -283,15 +287,17 @@ class ReadPSTBackend(PSTBackend):
                         )
                     )
                 elif content_type == "text/plain" and not body:
-                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                    payload = part.get_payload(decode=True)
+                    if isinstance(payload, bytes):
+                        body = payload.decode("utf-8", errors="ignore")
                 elif content_type == "text/html" and not html_body:
-                    html_body = part.get_payload(decode=True).decode(
-                        "utf-8", errors="ignore"
-                    )
+                    payload = part.get_payload(decode=True)
+                    if isinstance(payload, bytes):
+                        html_body = payload.decode("utf-8", errors="ignore")
         else:
             # Single part message
             payload = mbox_message.get_payload(decode=True)
-            if payload:
+            if isinstance(payload, bytes):
                 body = payload.decode("utf-8", errors="ignore")
 
         # Extract all headers (convert Header objects to strings)
@@ -325,7 +331,7 @@ class ReadPSTBackend(PSTBackend):
         if not address_string:
             return []
 
-        addresses = email.utils.getaddresses([address_string])
+        addresses = utils.getaddresses([address_string])
         return [addr[1] for addr in addresses if addr[1]]
 
     def get_message_count(self, folder: Folder | None = None) -> int:
