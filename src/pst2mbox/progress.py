@@ -13,20 +13,17 @@ class ImportProgress:
     def __init__(
         self,
         pst_file: Optional[Path] = None,
-        email: Optional[str] = None,
-        label_prefix: Optional[str] = None,
+        destination: Optional[str] = None,
     ) -> None:
         """Initialize progress tracker.
 
         Args:
             pst_file: Path to PST file being imported.
-            email: Gmail address being imported to.
-            label_prefix: Label prefix being used.
+            destination: IMAP host, port, and username being imported to.
         """
         self.pst_file = pst_file
         self.pst_hash: Optional[str] = None
-        self.email = email
-        self.label_prefix = label_prefix
+        self.destination = destination
         self.uploaded_message_ids: set[str] = set()
         self.current_folder: Optional[str] = None
         self.total_uploaded: int = 0
@@ -118,8 +115,7 @@ class ImportProgress:
         data = {
             "pst_file": str(self.pst_file) if self.pst_file else None,
             "pst_hash": self.pst_hash,
-            "email": self.email,
-            "label_prefix": self.label_prefix,
+            "destination": self.destination,
             "uploaded_message_ids": list(self.uploaded_message_ids),
             "failed_message_ids": list(self.failed_message_ids),
             "current_folder": self.current_folder,
@@ -151,8 +147,7 @@ class ImportProgress:
             progress = cls()
             progress.pst_file = Path(data["pst_file"]) if data.get("pst_file") else None
             progress.pst_hash = data.get("pst_hash")
-            progress.email = data.get("email")
-            progress.label_prefix = data.get("label_prefix")
+            progress.destination = data.get("destination")
             progress.uploaded_message_ids = set(data.get("uploaded_message_ids", []))
             progress.failed_message_ids = set(data.get("failed_message_ids", []))
             progress.current_folder = data.get("current_folder")
@@ -168,17 +163,17 @@ class ImportProgress:
         except (json.JSONDecodeError, KeyError, TypeError):
             return None
 
-    def is_compatible(self, pst_file: Path, email: str) -> bool:
+    def is_compatible(self, pst_file: Path, destination: str) -> bool:
         """Check if this progress is compatible with the given import.
 
         Args:
             pst_file: PST file path.
-            email: Gmail address.
+            destination: IMAP host, port, and username.
 
         Returns:
             True if progress can be resumed for this import.
         """
-        if self.email != email:
+        if self.destination != destination:
             return False
 
         # Check if PST file has changed

@@ -94,7 +94,7 @@ def main(
         output_strategy = strategy_map[strategy]
 
         # Display input info
-        console.print(f"\n[bold]PST to mbox Converter[/bold]")
+        console.print("\n[bold]PST to mbox Converter[/bold]")
         console.print(f"Input PST:  {pst_file}")
         console.print(f"Output:     {output}")
         console.print(f"Strategy:   {strategy}")

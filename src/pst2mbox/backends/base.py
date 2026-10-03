@@ -81,6 +81,10 @@ class PSTBackend(ABC):
         """
         pass
 
+    def get_conversion_errors(self) -> list[tuple[str, str, str]]:
+        """Return messages that could not be converted, if tracked by the backend."""
+        return []
+
     def __enter__(self) -> "PSTBackend":
         """Context manager entry."""
         self.open()
